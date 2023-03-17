@@ -73,6 +73,38 @@ pub fn build(b: *std.Build) void {
         }
     }
 
+    { // Game from - gui test wgpu
+        const exe = gui_test_wgpu.build(b, options);
+        exe.addModule("zgpu", zgpu_pkg.zgpu);
+        exe.addModule("zgui", zgui_pkg.zgui);
+        exe.addModule("zmath", zmath_pkg.zmath);
+        exe.addModule("zglfw", zglfw_pkg.zglfw);
+        exe.addModule("zstbi", zstbi_pkg.zstbi);
+        zgui_pkg.link(exe);
+        zgpu_pkg.link(exe);
+        zglfw_pkg.link(exe);
+        zstbi_pkg.link(exe);
+        const name = "game";
+        // TODO: Problems with LTO on Windows.
+        exe.want_lto = false;
+        if (exe.optimize == .ReleaseFast)
+            exe.strip = true;
+
+        comptime var desc_name: [256]u8 = [_]u8{0} ** 256;
+        comptime _ = std.mem.replace(u8, name, "_", " ", desc_name[0..]);
+        comptime var desc_size = std.mem.indexOf(u8, &desc_name, "\x00").?;
+
+        const install = b.step(name, "Build " ++ desc_name[0..desc_size]);
+        install.dependOn(&b.addInstallArtifact(exe).step);
+
+        const run_step = b.step(name ++ "-run", "Run " ++ desc_name[0..desc_size]);
+        const run_cmd = exe.run();
+        run_cmd.step.dependOn(install);
+        run_step.dependOn(&run_cmd.step);
+
+        b.getInstallStep().dependOn(install);
+    }
+
     //
     // Tests
     //
@@ -585,6 +617,8 @@ const ztracy = @import("libs/ztracy/build.zig");
 const zphysics = @import("libs/zphysics/build.zig");
 const zaudio = @import("libs/zaudio/build.zig");
 const zflecs = @import("libs/zflecs/build.zig");
+
+const game = @import("game/build.zig");
 
 const triangle_wgpu = @import("samples/triangle_wgpu/build.zig");
 const procedural_mesh_wgpu = @import("samples/procedural_mesh_wgpu/build.zig");
