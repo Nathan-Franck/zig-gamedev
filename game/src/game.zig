@@ -154,7 +154,7 @@ fn displayLine(window: *zglfw.Window) void {
     const draw_list = zgui.getBackgroundDrawList();
     draw_list.pushClipRect(.{ .pmin = .{ 0, 0 }, .pmax = .{ 400, 400 } });
 
-    // Draw lines.
+    // Draw straight lines.
     for (line, 0..) |p1, i| {
         const p2 = if (i + 1 < line.len) line[i + 1] else line[0];
         draw_list.addLine(.{
@@ -162,6 +162,36 @@ fn displayLine(window: *zglfw.Window) void {
             .p2 = p2,
             .col = zgui.colorConvertFloat3ToU32([_]f32{ 1, 0, 1 }),
             .thickness = 5.0,
+        });
+    }
+
+    // Generate curved lines by calculating bezier.
+    //   const AddBezierCubic = struct {
+    //     p1: [2]f32,
+    //     p2: [2]f32,
+    //     p3: [2]f32,
+    //     p4: [2]f32,
+    //     col: u32,
+    //     thickness: f32 = 1.0,
+    //     num_segments: u32 = 0,
+    // };
+    // pub fn addBezierCubic(draw_list: DrawList, args: AddBezierCubic) void {
+    for (line, 0..) |p1, i| {
+        // Auto generate p2 and p3 of bezier based on the previous point and the second next point.
+        const scale: f32 = 0.33;
+        const previous = if (i == 0) line[line.len - 1] else line[i - 1];
+        const secondNext = line[(i + 2) % line.len];
+        const p4 = line[(i + 1) % line.len];
+        const p2 = p1 + (p4 - previous) * @splat(2, scale);
+        const p3 = p4 + (p1 - secondNext) * @splat(2, scale);
+        draw_list.addBezierCubic(.{
+            .p1 = p1,
+            .p2 = p2,
+            .p3 = p3,
+            .p4 = p4,
+            .col = zgui.colorConvertFloat3ToU32([_]f32{ 1, 0, 0 }),
+            .thickness = 5.0,
+            .num_segments = 10,
         });
     }
 
@@ -174,29 +204,15 @@ fn displayLine(window: *zglfw.Window) void {
         });
     }
 
-    // // Handle camera rotation with mouse.
-    // {
-    //     const cursor_pos = window.getCursorPos();
-    //     const delta_x = @floatCast(f32, cursor_pos[0] - demo.mouse.cursor_pos[0]);
-    //     const delta_y = @floatCast(f32, cursor_pos[1] - demo.mouse.cursor_pos[1]);
-    //     demo.mouse.cursor_pos = cursor_pos;
-
-    //     if (window.getMouseButton(.right) == .press) {
-    //         demo.camera.pitch += 0.0025 * delta_y;
-    //         demo.camera.yaw += 0.0025 * delta_x;
-    //         demo.camera.pitch = math.min(demo.camera.pitch, 0.48 * math.pi);
-    //         demo.camera.pitch = math.max(demo.camera.pitch, -0.48 * math.pi);
-    //         demo.camera.yaw = zm.modAngle(demo.camera.yaw);
-    //     }
-    // }
-
+    // Interaction.
+    const mouse_pos = mouse_pos: {
+        const p = window.getCursorPos();
+        break :mouse_pos [_]f32{ @floatCast(f32, p[0]), @floatCast(f32, p[1]) };
+    };
     const mouse_button = window.getMouseButton(.left);
     switch (interaction) {
         .idle => {
             if (mouse_button == .press) {
-                // Check if mouse is hovering over any point.
-                const mouse_pos_f64 = window.getCursorPos();
-                const mouse_pos = [_]f32{ @floatCast(f32, mouse_pos_f64[0]), @floatCast(f32, mouse_pos_f64[1]) };
                 var closesPoint: ?struct {
                     index: usize,
                     distance: f32,
@@ -216,16 +232,12 @@ fn displayLine(window: *zglfw.Window) void {
             }
         },
         .dragging => {
-            const p = window.getCursorPos();
-            const mouse_pos = [_]f32{ @floatCast(f32, p[0]), @floatCast(f32, p[1]) };
             line[interaction.dragging.dragged_index] = mouse_pos - interaction.dragging.drag_offset;
             if (mouse_button == .release) {
                 interaction = Interaction{ .idle = {} };
             }
         },
     }
-
-    // Check if mouse is hovering over any point.
 
     draw_list.popClipRect();
 }
