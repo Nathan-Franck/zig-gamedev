@@ -132,7 +132,105 @@ fn destroy(allocator: std.mem.Allocator, demo: *DemoState) void {
     allocator.destroy(demo);
 }
 
-fn update(demo: *DemoState) !void {
+const vec2 = @Vector(2, f32);
+
+var line = [_]vec2{
+    .{ 50.0, 50.0 },
+    .{ 100.0, 200.0 },
+    .{ 300.0, 300.0 },
+};
+
+const Interaction = union(enum) {
+    idle,
+    dragging: struct {
+        drag_offset: vec2,
+        dragged_index: usize,
+    },
+};
+
+var interaction = Interaction{ .idle = {} };
+
+fn displayLine(window: *zglfw.Window) void {
+    const draw_list = zgui.getBackgroundDrawList();
+    draw_list.pushClipRect(.{ .pmin = .{ 0, 0 }, .pmax = .{ 400, 400 } });
+
+    // Draw lines.
+    for (line, 0..) |p1, i| {
+        const p2 = if (i + 1 < line.len) line[i + 1] else line[0];
+        draw_list.addLine(.{
+            .p1 = p1,
+            .p2 = p2,
+            .col = zgui.colorConvertFloat3ToU32([_]f32{ 1, 0, 1 }),
+            .thickness = 5.0,
+        });
+    }
+
+    // Draw points.
+    for (line) |p| {
+        draw_list.addCircle(.{
+            .p = p,
+            .r = 5.0,
+            .col = zgui.colorConvertFloat3ToU32([_]f32{ 1, 1, 0 }),
+        });
+    }
+
+    // // Handle camera rotation with mouse.
+    // {
+    //     const cursor_pos = window.getCursorPos();
+    //     const delta_x = @floatCast(f32, cursor_pos[0] - demo.mouse.cursor_pos[0]);
+    //     const delta_y = @floatCast(f32, cursor_pos[1] - demo.mouse.cursor_pos[1]);
+    //     demo.mouse.cursor_pos = cursor_pos;
+
+    //     if (window.getMouseButton(.right) == .press) {
+    //         demo.camera.pitch += 0.0025 * delta_y;
+    //         demo.camera.yaw += 0.0025 * delta_x;
+    //         demo.camera.pitch = math.min(demo.camera.pitch, 0.48 * math.pi);
+    //         demo.camera.pitch = math.max(demo.camera.pitch, -0.48 * math.pi);
+    //         demo.camera.yaw = zm.modAngle(demo.camera.yaw);
+    //     }
+    // }
+
+    const mouse_button = window.getMouseButton(.left);
+    switch (interaction) {
+        .idle => {
+            if (mouse_button == .press) {
+                // Check if mouse is hovering over any point.
+                const mouse_pos_f64 = window.getCursorPos();
+                const mouse_pos = [_]f32{ @floatCast(f32, mouse_pos_f64[0]), @floatCast(f32, mouse_pos_f64[1]) };
+                var closesPoint: ?struct {
+                    index: usize,
+                    distance: f32,
+                } = null;
+                for (line, 0..) |p, i| {
+                    const distance = math.sqrt(math.pow(f32, mouse_pos[0] - p[0], 2) + math.pow(f32, mouse_pos[1] - p[1], 2));
+                    if (distance < 10.0) {
+                        closesPoint = .{ .index = i, .distance = distance };
+                    }
+                }
+                if (closesPoint) |point| {
+                    interaction = Interaction{ .dragging = .{
+                        .drag_offset = mouse_pos - line[point.index],
+                        .dragged_index = point.index,
+                    } };
+                }
+            }
+        },
+        .dragging => {
+            const p = window.getCursorPos();
+            const mouse_pos = [_]f32{ @floatCast(f32, p[0]), @floatCast(f32, p[1]) };
+            line[interaction.dragging.dragged_index] = mouse_pos - interaction.dragging.drag_offset;
+            if (mouse_button == .release) {
+                interaction = Interaction{ .idle = {} };
+            }
+        },
+    }
+
+    // Check if mouse is hovering over any point.
+
+    draw_list.popClipRect();
+}
+
+fn update(demo: *DemoState, window: *zglfw.Window) !void {
     zgui.backend.newFrame(
         demo.gctx.swapchain_descriptor.width,
         demo.gctx.swapchain_descriptor.height,
@@ -445,15 +543,17 @@ fn update(demo: *DemoState) !void {
             _ = zgui.imageButton("image_button_id", tex_id, .{ .w = 512.0, .h = 512.0 });
         }
 
+        displayLine(window);
+
         const draw_list = zgui.getBackgroundDrawList();
-        draw_list.pushClipRect(.{ .pmin = .{ 0, 0 }, .pmax = .{ 400, 400 } });
-        draw_list.addLine(.{
-            .p1 = .{ 0, 0 },
-            .p2 = .{ 400, 400 },
-            .col = zgui.colorConvertFloat3ToU32([_]f32{ 1, 0, 1 }),
-            .thickness = 5.0,
-        });
-        draw_list.popClipRect();
+        // draw_list.pushClipRect(.{ .pmin = .{ 0, 0 }, .pmax = .{ 400, 400 } });
+        // draw_list.addLine(.{
+        //     .p1 = .{ 0, 0 },
+        //     .p2 = .{ 400, 400 },
+        //     .col = zgui.colorConvertFloat3ToU32([_]f32{ 1, 0, 0 }),
+        //     .thickness = 5.0,
+        // });
+        // draw_list.popClipRect();
 
         draw_list.pushClipRectFullScreen();
         draw_list.addRectFilled(.{
@@ -612,7 +712,7 @@ pub fn main() !void {
 
     while (!window.shouldClose() and window.getKey(.escape) != .press) {
         zglfw.pollEvents();
-        try update(demo);
+        try update(demo, window);
         draw(demo);
     }
 }

@@ -74,7 +74,7 @@ pub fn build(b: *std.Build) void {
     }
 
     { // Game from - gui test wgpu
-        const exe = gui_test_wgpu.build(b, options);
+        const exe = game.build(b, options);
         exe.addModule("zgpu", zgpu_pkg.zgpu);
         exe.addModule("zgui", zgui_pkg.zgui);
         exe.addModule("zmath", zmath_pkg.zmath);
