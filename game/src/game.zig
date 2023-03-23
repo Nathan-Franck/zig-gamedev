@@ -140,15 +140,50 @@ var line = [_]vec2{
     .{ 300.0, 300.0 },
 };
 
-const Interaction = union(enum) {
-    idle,
-    dragging: struct {
-        drag_offset: vec2,
-        dragged_index: usize,
+const SingleActionState = struct {
+    activation_position: vec2,
+};
+
+const State = struct {
+    selected: union(enum) {
+        points: []usize,
+        lines: []usize,
+    },
+    interaction: union(enum) {
+        tweak: union(enum) {
+            idle,
+            dragging: struct {
+                drag_offset: vec2,
+                dragged_index: usize,
+            },
+        },
+        box_select: struct {
+            start_position: vec2,
+        },
+        circle_select,
+        move: SingleActionState,
+        rotate: SingleActionState,
+        scale: SingleActionState,
     },
 };
 
-var interaction = Interaction{ .idle = {} };
+const settings = .{
+    .tweak_radius = 10.0,
+    .circle_radius = 100.0,
+    .state_keys = .{
+        .tweak = .escape,
+        .box_select = .b,
+        .circle_select = .c,
+        .move = .g,
+        .rotate = .r,
+        .scale = .s,
+    },
+};
+
+var state = State{
+    .selected = .{ .points = &[_]usize{} },
+    .interaction = .{ .tweak = .{ .idle = {} } },
+};
 
 fn displayLine(window: *zglfw.Window) void {
     const draw_list = zgui.getBackgroundDrawList();
@@ -165,19 +200,8 @@ fn displayLine(window: *zglfw.Window) void {
         });
     }
 
-    // Generate curved lines by calculating bezier.
-    //   const AddBezierCubic = struct {
-    //     p1: [2]f32,
-    //     p2: [2]f32,
-    //     p3: [2]f32,
-    //     p4: [2]f32,
-    //     col: u32,
-    //     thickness: f32 = 1.0,
-    //     num_segments: u32 = 0,
-    // };
-    // pub fn addBezierCubic(draw_list: DrawList, args: AddBezierCubic) void {
+    // Draw curved lines.
     for (line, 0..) |p1, i| {
-        // Auto generate p2 and p3 of bezier based on the previous point and the second next point.
         const scale: f32 = 0.33;
         const previous = if (i == 0) line[line.len - 1] else line[i - 1];
         const secondNext = line[(i + 2) % line.len];
@@ -205,36 +229,78 @@ fn displayLine(window: *zglfw.Window) void {
     }
 
     // Interaction.
-    const mouse_pos = mouse_pos: {
-        const p = window.getCursorPos();
-        break :mouse_pos [_]f32{ @floatCast(f32, p[0]), @floatCast(f32, p[1]) };
+    const mouse = .{
+        .position = position: {
+            const p = window.getCursorPos();
+            break :position [_]f32{ @floatCast(f32, p[0]), @floatCast(f32, p[1]) };
+        },
+        .button = window.getMouseButton(.left),
     };
-    const mouse_button = window.getMouseButton(.left);
-    switch (interaction) {
-        .idle => {
-            if (mouse_button == .press) {
-                var closesPoint: ?struct {
-                    index: usize,
-                    distance: f32,
-                } = null;
-                for (line, 0..) |p, i| {
-                    const distance = math.sqrt(math.pow(f32, mouse_pos[0] - p[0], 2) + math.pow(f32, mouse_pos[1] - p[1], 2));
-                    if (distance < 10.0) {
-                        closesPoint = .{ .index = i, .distance = distance };
-                    }
-                }
-                if (closesPoint) |point| {
-                    interaction = Interaction{ .dragging = .{
-                        .drag_offset = mouse_pos - line[point.index],
-                        .dragged_index = point.index,
-                    } };
-                }
+
+    // Poll keyboard for state changes.
+    if (window.getKey(settings.state_keys.tweak) == .press) {
+        state.interaction = .{ .tweak = .{ .idle = {} } };
+    } else if (window.getKey(settings.state_keys.box_select) == .press) {
+        state.interaction = .{ .box_select = .{ .start_position = mouse.position } };
+    } else if (window.getKey(settings.state_keys.circle_select) == .press) {
+        state.interaction = .{ .circle_select = {} };
+    } else if (window.getKey(settings.state_keys.move) == .press) {
+        state.interaction = .{ .move = .{ .activation_position = mouse.position } };
+    } else if (window.getKey(settings.state_keys.rotate) == .press) {
+        state.interaction = .{ .rotate = .{ .activation_position = mouse.position } };
+    } else if (window.getKey(settings.state_keys.scale) == .press) {
+        state.interaction = .{ .scale = .{ .activation_position = mouse.position } };
+    }
+
+    // Display current state in the window title.
+    var title = switch (state.interaction) {
+        .tweak => |tweak| switch (tweak) {
+            .idle => "tweak",
+            .dragging => "tweak (dragging)",
+        },
+        .box_select => "box_select",
+        .circle_select => "circle_select",
+        .move => "move",
+        .rotate => "rotate",
+        .scale => "scale",
+    };
+    window.setTitle(title);
+
+    switch (state.interaction) {
+        else => {},
+        .circle_select => {
+            if (mouse.button == .press) {
+                state.interaction = .{ .tweak = .{ .idle = {} } };
             }
         },
-        .dragging => {
-            line[interaction.dragging.dragged_index] = mouse_pos - interaction.dragging.drag_offset;
-            if (mouse_button == .release) {
-                interaction = Interaction{ .idle = {} };
+        .tweak => |tweak| {
+            switch (tweak) {
+                .idle => {
+                    if (mouse.button == .press) {
+                        var closesPoint: ?struct {
+                            index: usize,
+                            distance: f32,
+                        } = null;
+                        for (line, 0..) |p, i| {
+                            const distance = math.sqrt(math.pow(f32, mouse.position[0] - p[0], 2) + math.pow(f32, mouse.position[1] - p[1], 2));
+                            if (distance < settings.tweak_radius and (closesPoint == null or distance < closesPoint.?.distance)) {
+                                closesPoint = .{ .index = i, .distance = distance };
+                            }
+                        }
+                        if (closesPoint) |point| {
+                            state.interaction = .{ .tweak = .{ .dragging = .{
+                                .drag_offset = mouse.position - line[point.index],
+                                .dragged_index = point.index,
+                            } } };
+                        }
+                    }
+                },
+                .dragging => {
+                    line[tweak.dragging.dragged_index] = mouse.position - tweak.dragging.drag_offset;
+                    if (mouse.button == .release) {
+                        state.interaction = .{ .tweak = .{ .idle = {} } };
+                    }
+                },
             }
         },
     }
@@ -722,7 +788,7 @@ pub fn main() !void {
     };
     defer destroy(allocator, demo);
 
-    while (!window.shouldClose() and window.getKey(.escape) != .press) {
+    while (!window.shouldClose()) {
         zglfw.pollEvents();
         try update(demo, window);
         draw(demo);
