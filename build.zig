@@ -3,13 +3,21 @@ const std = @import("std");
 
 const min_zig_version = std.SemanticVersion{ .major = 0, .minor = 11, .patch = 0, .pre = "dev.1711" };
 
+// Don't need to check every time we build, as these slow things down.
+const performEnsures = false;
+const buildSamples = false;
+
 pub fn build(b: *std.Build) void {
     //
     // Options and system checks
     //
-    ensureZigVersion() catch return;
+    if (performEnsures)
+        ensureZigVersion() catch return;
+
     const options = Options{
-        .optimize = b.standardOptimizeOption(.{}),
+        .optimize = b.standardOptimizeOption(.{
+            .preferred_optimize_mode = .ReleaseSafe,
+        }),
         .target = b.standardTargetOptions(.{}),
         .zd3d12_enable_debug_layer = b.option(
             bool,
@@ -23,25 +31,32 @@ pub fn build(b: *std.Build) void {
         ) orelse false,
         .zpix_enable = b.option(bool, "zpix-enable", "Enable PIX for Windows profiler") orelse false,
     };
-    ensureTarget(options.target) catch return;
-    ensureGit(b.allocator) catch return;
-    ensureGitLfs(b.allocator, "install") catch return;
-    ensureGitLfs(b.allocator, "pull") catch return;
-    ensureGitLfsContent("/samples/triangle_wgpu/triangle_wgpu_content/Roboto-Medium.ttf") catch return;
+
+    if (performEnsures) {
+        ensureTarget(options.target) catch return;
+        ensureGit(b.allocator) catch return;
+        ensureGitLfs(b.allocator, "install") catch return;
+        ensureGitLfs(b.allocator, "pull") catch return;
+        ensureGitLfsContent("/samples/triangle_wgpu/triangle_wgpu_content/Roboto-Medium.ttf") catch return;
+    }
 
     // Fetch the latest Dawn/WebGPU binaries.
-    const skip_dawn_update = b.option(bool, "skip-dawn-update", "Skip updating Dawn binaries") orelse false;
-    if (!skip_dawn_update) {
-        var child = std.ChildProcess.init(&.{ "git", "submodule", "update", "--init", "--remote" }, b.allocator);
-        child.cwd = thisDir();
-        child.stderr = std.io.getStdErr();
-        child.stdout = std.io.getStdOut();
-        _ = child.spawnAndWait() catch {
-            std.log.err("Failed to fetch git submodule. Please try to re-clone.", .{});
-            return;
-        };
+    if (performEnsures) {
+        const skip_dawn_update = b.option(bool, "skip-dawn-update", "Skip updating Dawn binaries") orelse false;
+        if (!skip_dawn_update) {
+            var child = std.ChildProcess.init(&.{ "git", "submodule", "update", "--init", "--remote" }, b.allocator);
+            child.cwd = thisDir();
+            child.stderr = std.io.getStdErr();
+            child.stdout = std.io.getStdOut();
+            _ = child.spawnAndWait() catch {
+                std.log.err("Failed to fetch git submodule. Please try to re-clone.", .{});
+                return;
+            };
+        }
     }
-    ensureGitLfsContent("/libs/zgpu/libs/dawn/x86_64-windows-gnu/dawn.lib") catch return;
+
+    if (performEnsures)
+        ensureGitLfsContent("/libs/zgpu/libs/dawn/x86_64-windows-gnu/dawn.lib") catch return;
 
     //
     // Packages
@@ -61,20 +76,23 @@ pub fn build(b: *std.Build) void {
     //
     // Sample applications
     //
-    samplesCrossPlatform(b, options);
+    if (buildSamples) {
+        samplesCrossPlatform(b, options);
 
-    if (options.target.isWindows() and
-        (builtin.target.os.tag == .windows or builtin.target.os.tag == .linux))
-    {
-        samplesWindowsLinux(b, options);
+        if (options.target.isWindows() and
+            (builtin.target.os.tag == .windows or builtin.target.os.tag == .linux))
+        {
+            samplesWindowsLinux(b, options);
 
-        if (builtin.target.os.tag == .windows) {
-            samplesWindows(b, options);
+            if (builtin.target.os.tag == .windows) {
+                samplesWindows(b, options);
+            }
         }
     }
 
     { // Game from - gui test wgpu
         const exe = game.build(b, options);
+        // exe.use_llvm = false;
         exe.addModule("zgpu", zgpu_pkg.zgpu);
         exe.addModule("zgui", zgui_pkg.zgui);
         exe.addModule("zmath", zmath_pkg.zmath);

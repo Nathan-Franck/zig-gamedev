@@ -185,7 +185,7 @@ var state = State{
     .interaction = .{ .tweak = .{ .idle = {} } },
 };
 
-fn displayLine(window: *zglfw.Window) void {
+fn vectorInterationUI(window: *zglfw.Window) void {
     const draw_list = zgui.getBackgroundDrawList();
     draw_list.pushClipRect(.{ .pmin = .{ 0, 0 }, .pmax = .{ 400, 400 } });
 
@@ -270,7 +270,7 @@ fn displayLine(window: *zglfw.Window) void {
         else => {},
         .circle_select => {
             if (mouse.button == .press) {
-                state.interaction = .{ .tweak = .{ .idle = {} } };
+                state.interaction.tweak = .idle;
             }
         },
         .tweak => |tweak| {
@@ -288,17 +288,17 @@ fn displayLine(window: *zglfw.Window) void {
                             }
                         }
                         if (closesPoint) |point| {
-                            state.interaction = .{ .tweak = .{ .dragging = .{
+                            state.interaction.tweak = .{ .dragging = .{
                                 .drag_offset = mouse.position - line[point.index],
                                 .dragged_index = point.index,
-                            } } };
+                            } };
                         }
                     }
                 },
                 .dragging => {
                     line[tweak.dragging.dragged_index] = mouse.position - tweak.dragging.drag_offset;
                     if (mouse.button == .release) {
-                        state.interaction = .{ .tweak = .{ .idle = {} } };
+                        state.interaction.tweak = .idle;
                     }
                 },
             }
@@ -308,7 +308,7 @@ fn displayLine(window: *zglfw.Window) void {
     draw_list.popClipRect();
 }
 
-fn update(demo: *DemoState, window: *zglfw.Window) !void {
+fn update(demo: *DemoState) void {
     zgui.backend.newFrame(
         demo.gctx.swapchain_descriptor.width,
         demo.gctx.swapchain_descriptor.height,
@@ -316,6 +316,9 @@ fn update(demo: *DemoState, window: *zglfw.Window) !void {
 
     zgui.setNextWindowPos(.{ .x = 20.0, .y = 20.0, .cond = .first_use_ever });
     zgui.setNextWindowSize(.{ .w = -1.0, .h = -1.0, .cond = .first_use_ever });
+}
+
+fn demoUpdate(demo: *DemoState) !void {
 
     zgui.pushStyleVar1f(.{ .idx = .window_rounding, .v = 5.0 });
     zgui.pushStyleVar2f(.{ .idx = .window_padding, .v = .{ 5.0, 5.0 } });
@@ -621,17 +624,7 @@ fn update(demo: *DemoState, window: *zglfw.Window) !void {
             _ = zgui.imageButton("image_button_id", tex_id, .{ .w = 512.0, .h = 512.0 });
         }
 
-        displayLine(window);
-
         const draw_list = zgui.getBackgroundDrawList();
-        // draw_list.pushClipRect(.{ .pmin = .{ 0, 0 }, .pmax = .{ 400, 400 } });
-        // draw_list.addLine(.{
-        //     .p1 = .{ 0, 0 },
-        //     .p2 = .{ 400, 400 },
-        //     .col = zgui.colorConvertFloat3ToU32([_]f32{ 1, 0, 0 }),
-        //     .thickness = 5.0,
-        // });
-        // draw_list.popClipRect();
 
         draw_list.pushClipRectFullScreen();
         draw_list.addRectFilled(.{
@@ -789,8 +782,16 @@ pub fn main() !void {
     defer destroy(allocator, demo);
 
     while (!window.shouldClose()) {
+        // Run slower while the window is not focused.
+        if (!window.getAttribute(zglfw.Window.Attribute.focused)) {
+            std.time.sleep(std.time.ns_per_s / 4);
+        }
+
+        // Main loop update.
         zglfw.pollEvents();
-        try update(demo, window);
+        update(demo);
+        vectorInterationUI(window);
+        try demoUpdate(demo);
         draw(demo);
     }
 }
