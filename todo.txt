@@ -1,2 +1,5 @@
-⬜ Persistent state
+Fun Tasks to Try!
+
+✅ Persistent state
+    Using json parse/stringify to save to a file the entire state, points and interaction state
 ⬜ Point selection

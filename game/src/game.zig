@@ -135,30 +135,32 @@ fn destroy(allocator: std.mem.Allocator, demo: *DemoState) void {
 const vec2 = @Vector(2, f32);
 
 const SingleActionState = struct {
-    activation_position: [2]f32,
+    activation_position: vec2,
 };
 
 const State = struct {
-    line: [][2]f32,
+    line: []vec2,
     selected: union(enum) {
         points: []usize,
         lines: []usize,
     },
     interaction: union(enum) {
         tweak: union(enum) {
-            idle: bool,
+            idle,
             dragging: struct {
-                drag_offset: [2]f32,
+                drag_offset: vec2,
                 dragged_index: usize,
             },
+            fn jsonTag() []const u8 { return "type"; } // TODO: implement with custom json parser/stringifier
         },
         box_select: struct {
-            start_position: [2]f32,
+            start_position: vec2,
         },
-        circle_select: bool,
+        circle_select,
         move: SingleActionState,
         rotate: SingleActionState,
         scale: SingleActionState,
+        fn jsonTag() []const u8 { return "type"; } // TODO: implement with custom json parser/stringifier
     },
 };
 
@@ -184,7 +186,7 @@ var line = [_][2]f32{
 var state = State{
     .line = &line,
     .selected = .{ .points = &[_]usize{} },
-    .interaction = .{ .tweak = .{ .idle = true } },
+    .interaction = .{ .tweak = .{ .idle = .{ .idle = .{} } } },
 };
 
 fn vectorInterationUI(window: *zglfw.Window) void {
@@ -242,11 +244,11 @@ fn vectorInterationUI(window: *zglfw.Window) void {
 
     // Poll keyboard for state changes.
     if (window.getKey(settings.state_keys.tweak) == .press) {
-        state.interaction = .{ .tweak = .{ .idle = true } };
+        state.interaction = .{ .tweak = .{ .idle = .{.idle = .{}} } };
     } else if (window.getKey(settings.state_keys.box_select) == .press) {
         state.interaction = .{ .box_select = .{ .start_position = mouse.position } };
     } else if (window.getKey(settings.state_keys.circle_select) == .press) {
-        state.interaction = .{ .circle_select = true };
+        state.interaction = .{ .circle_select = .{ .circle_select = .{} } };
     } else if (window.getKey(settings.state_keys.move) == .press) {
         state.interaction = .{ .move = .{ .activation_position = mouse.position } };
     } else if (window.getKey(settings.state_keys.rotate) == .press) {
@@ -273,7 +275,7 @@ fn vectorInterationUI(window: *zglfw.Window) void {
         else => {},
         .circle_select => {
             if (mouse.button == .press) {
-                state.interaction.tweak = .{ .idle = true };
+                state.interaction = .{ .tweak = .{ .idle = .{ .idle = .{} } } };
             }
         },
         .tweak => |tweak| {
@@ -305,7 +307,7 @@ fn vectorInterationUI(window: *zglfw.Window) void {
                     const result = mouse.position - drag_offset;
                     state.line[tweak.dragging.dragged_index] = result;
                     if (mouse.button == .release) {
-                        state.interaction.tweak = .{ .idle = true };
+                        state.interaction.tweak = .{ .idle = .{ .idle = .{}} };
                     }
                 },
             }
@@ -793,11 +795,11 @@ pub fn main() !void {
         defer allocator.free(state_json);
 
         var token_stream = std.json.TokenStream.init(state_json);
-        state = std.json.parse(State, &token_stream,  .{ .allocator = allocator }) catch state;
+        state = std.json.parse(State, &token_stream, .{ .allocator = allocator }) catch state;
 
         std.log.info("Loaded state from state.json.", .{});
     }
-    defer std.json.parseFree(State, state,  .{ .allocator = allocator });
+    defer std.json.parseFree(State, state, .{ .allocator = allocator });
 
     while (!window.shouldClose()) {
         // Run slower while the window is not focused.
