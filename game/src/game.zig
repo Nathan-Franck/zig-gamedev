@@ -134,33 +134,28 @@ fn destroy(allocator: std.mem.Allocator, demo: *DemoState) void {
 
 const vec2 = @Vector(2, f32);
 
-var line = [_]vec2{
-    .{ 50.0, 50.0 },
-    .{ 100.0, 200.0 },
-    .{ 300.0, 300.0 },
-};
-
 const SingleActionState = struct {
-    activation_position: vec2,
+    activation_position: [2]f32,
 };
 
 const State = struct {
+    line: [][2]f32,
     selected: union(enum) {
         points: []usize,
         lines: []usize,
     },
     interaction: union(enum) {
         tweak: union(enum) {
-            idle,
+            idle: bool,
             dragging: struct {
-                drag_offset: vec2,
+                drag_offset: [2]f32,
                 dragged_index: usize,
             },
         },
         box_select: struct {
-            start_position: vec2,
+            start_position: [2]f32,
         },
-        circle_select,
+        circle_select: bool,
         move: SingleActionState,
         rotate: SingleActionState,
         scale: SingleActionState,
@@ -180,9 +175,16 @@ const settings = .{
     },
 };
 
+var line = [_][2]f32{
+    .{ 50.0, 50.0 },
+    .{ 100.0, 200.0 },
+    .{ 300.0, 300.0 },
+};
+
 var state = State{
+    .line = &line,
     .selected = .{ .points = &[_]usize{} },
-    .interaction = .{ .tweak = .{ .idle = {} } },
+    .interaction = .{ .tweak = .{ .idle = true } },
 };
 
 fn vectorInterationUI(window: *zglfw.Window) void {
@@ -190,8 +192,8 @@ fn vectorInterationUI(window: *zglfw.Window) void {
     draw_list.pushClipRect(.{ .pmin = .{ 0, 0 }, .pmax = .{ 400, 400 } });
 
     // Draw straight lines.
-    for (line, 0..) |p1, i| {
-        const p2 = if (i + 1 < line.len) line[i + 1] else line[0];
+    for (state.line, 0..) |p1, i| {
+        const p2 = if (i + 1 < state.line.len) state.line[i + 1] else state.line[0];
         draw_list.addLine(.{
             .p1 = p1,
             .p2 = p2,
@@ -201,11 +203,12 @@ fn vectorInterationUI(window: *zglfw.Window) void {
     }
 
     // Draw curved lines.
-    for (line, 0..) |p1, i| {
+    for (state.line, 0..) |point, i| {
+        const p1: vec2 = point;
         const scale: f32 = 0.33;
-        const previous = if (i == 0) line[line.len - 1] else line[i - 1];
-        const secondNext = line[(i + 2) % line.len];
-        const p4 = line[(i + 1) % line.len];
+        const previous: vec2 = if (i == 0) state.line[state.line.len - 1] else state.line[i - 1];
+        const secondNext: vec2 = state.line[(i + 2) % state.line.len];
+        const p4: vec2 = state.line[(i + 1) % state.line.len];
         const p2 = p1 + (p4 - previous) * @splat(2, scale);
         const p3 = p4 + (p1 - secondNext) * @splat(2, scale);
         draw_list.addBezierCubic(.{
@@ -220,7 +223,7 @@ fn vectorInterationUI(window: *zglfw.Window) void {
     }
 
     // Draw points.
-    for (line) |p| {
+    for (state.line) |p| {
         draw_list.addCircle(.{
             .p = p,
             .r = 5.0,
@@ -239,11 +242,11 @@ fn vectorInterationUI(window: *zglfw.Window) void {
 
     // Poll keyboard for state changes.
     if (window.getKey(settings.state_keys.tweak) == .press) {
-        state.interaction = .{ .tweak = .{ .idle = {} } };
+        state.interaction = .{ .tweak = .{ .idle = true } };
     } else if (window.getKey(settings.state_keys.box_select) == .press) {
         state.interaction = .{ .box_select = .{ .start_position = mouse.position } };
     } else if (window.getKey(settings.state_keys.circle_select) == .press) {
-        state.interaction = .{ .circle_select = {} };
+        state.interaction = .{ .circle_select = true };
     } else if (window.getKey(settings.state_keys.move) == .press) {
         state.interaction = .{ .move = .{ .activation_position = mouse.position } };
     } else if (window.getKey(settings.state_keys.rotate) == .press) {
@@ -270,35 +273,39 @@ fn vectorInterationUI(window: *zglfw.Window) void {
         else => {},
         .circle_select => {
             if (mouse.button == .press) {
-                state.interaction.tweak = .idle;
+                state.interaction.tweak = .{ .idle = true };
             }
         },
         .tweak => |tweak| {
             switch (tweak) {
                 .idle => {
                     if (mouse.button == .press) {
-                        var closesPoint: ?struct {
+                        var closest_point: ?struct {
                             index: usize,
                             distance: f32,
                         } = null;
-                        for (line, 0..) |p, i| {
+                        for (state.line, 0..) |p, i| {
                             const distance = math.sqrt(math.pow(f32, mouse.position[0] - p[0], 2) + math.pow(f32, mouse.position[1] - p[1], 2));
-                            if (distance < settings.tweak_radius and (closesPoint == null or distance < closesPoint.?.distance)) {
-                                closesPoint = .{ .index = i, .distance = distance };
+                            if (distance < settings.tweak_radius and (closest_point == null or distance < closest_point.?.distance)) {
+                                closest_point = .{ .index = i, .distance = distance };
                             }
                         }
-                        if (closesPoint) |point| {
+                        if (closest_point) |point| {
+                            const point_position: vec2 = state.line[point.index];
                             state.interaction.tweak = .{ .dragging = .{
-                                .drag_offset = mouse.position - line[point.index],
+                                .drag_offset = mouse.position - point_position,
                                 .dragged_index = point.index,
                             } };
                         }
                     }
                 },
                 .dragging => {
-                    line[tweak.dragging.dragged_index] = mouse.position - tweak.dragging.drag_offset;
+                    const drag_offset: vec2 = tweak.dragging.drag_offset;
+                    std.debug.print("dragging: {d}\n", .{tweak.dragging.dragged_index});
+                    const result = mouse.position - drag_offset;
+                    state.line[tweak.dragging.dragged_index] = result;
                     if (mouse.button == .release) {
-                        state.interaction.tweak = .idle;
+                        state.interaction.tweak = .{ .idle = true };
                     }
                 },
             }
@@ -319,7 +326,6 @@ fn update(demo: *DemoState) void {
 }
 
 fn demoUpdate(demo: *DemoState) !void {
-
     zgui.pushStyleVar1f(.{ .idx = .window_rounding, .v = 5.0 });
     zgui.pushStyleVar2f(.{ .idx = .window_padding, .v = .{ 5.0, 5.0 } });
     defer zgui.popStyleVar(.{ .count = 2 });
@@ -781,6 +787,18 @@ pub fn main() !void {
     };
     defer destroy(allocator, demo);
 
+    // Load state from json file.
+    {
+        const state_json = try std.fs.cwd().readFileAlloc(allocator, "state.json", 10_000);
+        defer allocator.free(state_json);
+
+        var token_stream = std.json.TokenStream.init(state_json);
+        state = std.json.parse(State, &token_stream,  .{ .allocator = allocator }) catch state;
+
+        std.log.info("Loaded state from state.json.", .{});
+    }
+    defer std.json.parseFree(State, state,  .{ .allocator = allocator });
+
     while (!window.shouldClose()) {
         // Run slower while the window is not focused.
         if (!window.getAttribute(zglfw.Window.Attribute.focused)) {
@@ -793,5 +811,15 @@ pub fn main() !void {
         vectorInterationUI(window);
         try demoUpdate(demo);
         draw(demo);
+    }
+
+    // Save state to json file
+    {
+        const state_json = try std.json.stringifyAlloc(allocator, &state, .{});
+        defer allocator.free(state_json);
+
+        try std.fs.cwd().writeFile("state.json", state_json);
+
+        std.log.info("Saved state to state.json.", .{});
     }
 }
