@@ -2332,16 +2332,75 @@ pub fn stringify(
             }
 
             if (comptime std.meta.trait.hasFn("jsonTag")(T)) {
-                comptime var info = @typeInfo(T).Union;
-                if (info.tag_type) |UnionTagType| {
-                    inline for (info.fields) |u_field| {
+                comptime var info = T;
+                comptime var fields: []const std.builtin.Type.StructField = &[_]std.builtin.Type.StructField{};
+                inline while (info.Union.tag_type) |UnionTagType| {
+                    inline for (info.Union.fields) |u_field| {
                         if (value == @field(UnionTagType, u_field.name)) {
+                            if (comptime std.meta.trait.hasFn("jsonTag")(T)) {
+                                comptime {
+                                    fields = fields ++ &[_]std.builtin.Type.StructField{
+                                        .{
+                                            .name = T.jsonTag(),
+                                            .type = []const u8,
+                                            .is_comptime = false,
+                                            .alignment = 0,
+                                            .default_value = "",
+                                        },
+                                    };
+                                }
+                            }
                             const field = @field(value, u_field.name);
-                            const toStringify: struct { tag: []const u8, value: @TypeOf(field) } = .{ .tag = T.jsonTag(), .value = field };
-                            return try stringify(toStringify, options, out_stream);
+                            switch (@TypeOf(field)) {
+                                .Union => {
+                                    info = @TypeOf(field);
+                                    continue;
+                                },
+                                else => {
+                                    fields = fields ++ &[_]std.builtin.Type.StructField{
+                                        .{
+                                            .name = "value",
+                                            .type = @TypeOf(field),
+                                            .is_comptime = false,
+                                            .alignment = 0,
+                                            .default_value = field,
+                                        },
+                                    };
+                                    break;
+                                },
+                            }
                         }
                     }
                 }
+                const resultingTypeInfo: std.builtin.Type = .{ .Struct = .{
+                    .layout = .Auto,
+                    .is_tuple = false,
+                    .decls = &[_]std.builtin.Type.Declaration{},
+                    .fields = fields,
+                } };
+                const resultingType = @Type(resultingTypeInfo);
+                var result: resultingType = undefined;
+                while (info.Union.tag_type) |UnionTagType| {
+                    inline for (info.Union.fields) |u_field| {
+                        if (value == @field(UnionTagType, u_field.name)) {
+                            const field = @field(value, u_field.name);
+                            if (comptime std.meta.trait.hasFn("jsonTag")(T)) {
+                                @field(result, T.jsonTag()) = @tagName(value);
+                            }
+                            switch (@TypeOf(field)) {
+                                .Union => {
+                                    info = @typeInfo(@TypeOf(field));
+                                    continue;
+                                },
+                                else => {
+                                    @field(result, "value") = value;
+                                    break;
+                                },
+                            }
+                        }
+                    }
+                }
+                return stringify(result, options, out_stream);
             }
 
             const info = @typeInfo(T).Union;
