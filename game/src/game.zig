@@ -152,7 +152,7 @@ const State = struct {
                 drag_offset: vec2,
                 dragged_index: usize,
             },
-            fn jsonTag() []const u8 { return "type"; } // TODO: implement with custom json parser/stringifier
+            pub fn jsonTag() []const u8 { return "tweak"; } // TODO: implement with custom json parser/stringifier
         },
         box_select: struct {
             start_position: vec2,
@@ -161,7 +161,7 @@ const State = struct {
         move: SingleActionState,
         rotate: SingleActionState,
         scale: SingleActionState,
-        fn jsonTag() []const u8 { return "type"; } // TODO: implement with custom json parser/stringifier
+        pub fn jsonTag() []const u8 { return "interaction"; } // TODO: implement with custom json parser/stringifier
     },
 };
 
@@ -777,19 +777,6 @@ pub fn main() !void {
     };
     defer destroy(allocator, demo);
 
-
-    
-
-// var line = [_]vec2{
-//     .{ 50.0, 50.0 },
-//     .{ 100.0, 200.0 },
-//     .{ 300.0, 300.0 },
-// };State{
-//     .line = &line,
-//     .selected = .{ .points = &[_]usize{} },
-//     .interaction = .{ .tweak = .idle },
-// }
-
     // Load state from json file.
     {
         const state_json = try std.fs.cwd().readFileAlloc(allocator, "state.json", 10_000);
@@ -797,12 +784,11 @@ pub fn main() !void {
 
         var token_stream = json.TokenStream.init(state_json);
         state = json.parse(State, &token_stream, .{ .allocator = allocator }) catch state;
-    std.debug.print("{}", .{state});
+        std.debug.print("{}", .{state});
 
         std.log.info("Loaded state from state.json.", .{});
     }
     defer json.parseFree(State, state, .{ .allocator = allocator });
-
 
     while (!window.shouldClose()) {
         // Run slower while the window is not focused.

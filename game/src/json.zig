@@ -1,4 +1,3 @@
-
 const builtin = @import("builtin");
 const std = @import("std");
 const debug = std.debug;
@@ -1405,8 +1404,8 @@ fn ParseInternalErrorImpl(comptime T: type, comptime inferred_types: []const typ
                 UnescapeValidStringError ||
                 ParseInternalErrorImpl(vectorInfo.child, inferred_types ++ [_]type{T});
         },
-        // .Void =>  error { UnexpectedToken }, 
-        else => return error{ UnexpectedToken },
+        // .Void =>  error { UnexpectedToken },
+        else => return error{UnexpectedToken},
     }
     unreachable;
 }
@@ -1667,7 +1666,7 @@ fn parseInternal(
                                 }
 
                                 try arraylist.ensureUnusedCapacity(1);
-                                
+
                                 // Debug log name of field
                                 std.debug.print("Parsing slice field: {}\n", .{ptrInfo.child});
                                 const v = try parseInternal(ptrInfo.child, tok, tokens, options);
@@ -1679,7 +1678,7 @@ fn parseInternal(
                                 return try arraylist.toOwnedSliceSentinel(sentinel_value);
                             }
 
-                            const result =  try arraylist.toOwnedSlice();
+                            const result = try arraylist.toOwnedSlice();
 
                             std.debug.print("Resulting slice: {}\n", .{@TypeOf(result[0])});
 
@@ -1724,7 +1723,7 @@ fn parseInternal(
                     while (i < vectorInfo.len) : (i += 1) {
                         r[i] = try parse(vectorInfo.child, tokens, child_options);
                     }
-                    std.debug.print("Parsing vector field: {}, with output value: {}\n", .{vectorInfo.child, r});
+                    std.debug.print("Parsing vector field: {}, with output value: {}\n", .{ vectorInfo.child, r });
 
                     const tok = (try tokens.next()) orelse return error.UnexpectedEndOfJson;
                     switch (tok) {
@@ -2330,6 +2329,50 @@ pub fn stringify(
         .Union => {
             if (comptime std.meta.trait.hasFn("jsonStringify")(T)) {
                 return value.jsonStringify(options, out_stream);
+            }
+
+            if (comptime std.meta.trait.hasFn("jsonTag")(T)) {
+                const info = @typeInfo(T).Union;
+                if (info.tag_type) |UnionTagType| {
+                    inline for (info.fields) |u_field| {
+                        if (value == @field(UnionTagType, u_field.name)) {
+                            try out_stream.writeByte('{');
+                            var child_options = options;
+                            if (child_options.whitespace) |*child_whitespace| {
+                                child_whitespace.indent_level += 1;
+                            }
+                            try encodeJsonString(T.jsonTag(), options, out_stream);
+                            try out_stream.writeByte(':');
+                            if (child_options.whitespace) |child_whitespace| {
+                                if (child_whitespace.separator) {
+                                    try out_stream.writeByte(' ');
+                                }
+                            }
+                            try encodeJsonString(u_field.name, options, out_stream);
+                            try out_stream.writeByte(',');
+                            if (child_options.whitespace) |whitespace| {
+                                try whitespace.outputIndent(out_stream);
+                            }
+                            try encodeJsonString("value", options, out_stream);
+                            try out_stream.writeByte(':');
+                            if (child_options.whitespace) |child_whitespace| {
+                                if (child_whitespace.separator) {
+                                    try out_stream.writeByte(' ');
+                                }
+                            }
+                            var result = try stringify(@field(value, u_field.name), child_options, out_stream);
+                            try out_stream.writeByte('}');
+                            return result;
+                        }
+                    }
+                } else {
+                    @compileError("Unable to stringify untagged union '" ++ @typeName(T) ++ "'");
+                }
+
+                if (options.whitespace) |whitespace| {
+                    try whitespace.outputIndent(out_stream);
+                }
+                try out_stream.writeByte('}');
             }
 
             const info = @typeInfo(T).Union;
