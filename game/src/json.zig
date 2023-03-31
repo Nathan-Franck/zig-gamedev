@@ -2331,55 +2331,18 @@ pub fn stringify(
                 return value.jsonStringify(options, out_stream);
             }
 
-            if (comptime std.meta.trait.hasFn("jsonTag")(T)) {
-                const info = @typeInfo(T).Union;
-                if (info.tag_type) |UnionTagType| {
-                    inline for (info.fields) |u_field| {
-                        if (value == @field(UnionTagType, u_field.name)) {
-                            try out_stream.writeByte('{');
-                            var child_options = options;
-                            if (child_options.whitespace) |*child_whitespace| {
-                                child_whitespace.indent_level += 1;
-                            }
-                            try encodeJsonString(T.jsonTag(), options, out_stream);
-                            try out_stream.writeByte(':');
-                            if (child_options.whitespace) |child_whitespace| {
-                                if (child_whitespace.separator) {
-                                    try out_stream.writeByte(' ');
-                                }
-                            }
-                            try encodeJsonString(u_field.name, options, out_stream);
-                            try out_stream.writeByte(',');
-                            if (child_options.whitespace) |whitespace| {
-                                try whitespace.outputIndent(out_stream);
-                            }
-                            try encodeJsonString("value", options, out_stream);
-                            try out_stream.writeByte(':');
-                            if (child_options.whitespace) |child_whitespace| {
-                                if (child_whitespace.separator) {
-                                    try out_stream.writeByte(' ');
-                                }
-                            }
-                            var result = try stringify(@field(value, u_field.name), child_options, out_stream);
-                            try out_stream.writeByte('}');
-                            return result;
-                        }
-                    }
-                } else {
-                    @compileError("Unable to stringify untagged union '" ++ @typeName(T) ++ "'");
-                }
-
-                if (options.whitespace) |whitespace| {
-                    try whitespace.outputIndent(out_stream);
-                }
-                try out_stream.writeByte('}');
-            }
-
             const info = @typeInfo(T).Union;
+
             if (info.tag_type) |UnionTagType| {
                 inline for (info.fields) |u_field| {
                     if (value == @field(UnionTagType, u_field.name)) {
-                        return try stringify(@field(value, u_field.name), options, out_stream);
+                        const field = @field(value, u_field.name);
+                        if (comptime std.meta.trait.hasFn("jsonTag")(T)) {
+                            const toStringify: struct { tag: []const u8, value: @TypeOf(field) } = .{ .tag = T.jsonTag(), .value = field };
+                            return try stringify(toStringify, options, out_stream);
+                        }
+
+                        return try stringify(field, options, out_stream);
                     }
                 }
             } else {

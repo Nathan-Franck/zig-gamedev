@@ -152,7 +152,9 @@ const State = struct {
                 drag_offset: vec2,
                 dragged_index: usize,
             },
-            pub fn jsonTag() []const u8 { return "tweak"; } // TODO: implement with custom json parser/stringifier
+            pub fn jsonTag() []const u8 {
+                return "tweak";
+            } // TODO: implement with custom json parser/stringifier
         },
         box_select: struct {
             start_position: vec2,
@@ -161,7 +163,9 @@ const State = struct {
         move: SingleActionState,
         rotate: SingleActionState,
         scale: SingleActionState,
-        pub fn jsonTag() []const u8 { return "interaction"; } // TODO: implement with custom json parser/stringifier
+        pub fn jsonTag() []const u8 {
+            return "interaction";
+        } // TODO: implement with custom json parser/stringifier
     },
 };
 
@@ -789,6 +793,11 @@ pub fn main() !void {
         std.log.info("Loaded state from state.json.", .{});
     }
     defer json.parseFree(State, state, .{ .allocator = allocator });
+
+    // var thinger: struct { x: i32, y: i32 } = .{ .x = 0, .y = 0 };
+    // std.debug.print("{}\n", .{thinger});
+    // @field(thinger, "x") = 1;
+    // std.debug.print("{}\n", .{thinger});
 
     while (!window.shouldClose()) {
         // Run slower while the window is not focused.
