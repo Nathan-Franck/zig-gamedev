@@ -2331,82 +2331,87 @@ pub fn stringify(
                 return value.jsonStringify(options, out_stream);
             }
 
-            if (comptime std.meta.trait.hasFn("jsonTag")(T)) {
-                comptime var info = T;
-                comptime var fields: []const std.builtin.Type.StructField = &[_]std.builtin.Type.StructField{};
-                inline while (info.Union.tag_type) |UnionTagType| {
-                    inline for (info.Union.fields) |u_field| {
-                        if (value == @field(UnionTagType, u_field.name)) {
-                            if (comptime std.meta.trait.hasFn("jsonTag")(T)) {
-                                comptime {
-                                    fields = fields ++ &[_]std.builtin.Type.StructField{
-                                        .{
-                                            .name = T.jsonTag(),
-                                            .type = []const u8,
-                                            .is_comptime = false,
-                                            .alignment = 0,
-                                            .default_value = "",
-                                        },
-                                    };
-                                }
-                            }
-                            const field = @field(value, u_field.name);
-                            switch (@TypeOf(field)) {
-                                .Union => {
-                                    info = @TypeOf(field);
-                                    continue;
-                                },
-                                else => {
-                                    fields = fields ++ &[_]std.builtin.Type.StructField{
-                                        .{
-                                            .name = "value",
-                                            .type = @TypeOf(field),
-                                            .is_comptime = false,
-                                            .alignment = 0,
-                                            .default_value = field,
-                                        },
-                                    };
-                                    break;
-                                },
-                            }
-                        }
-                    }
-                }
-                const resultingTypeInfo: std.builtin.Type = .{ .Struct = .{
-                    .layout = .Auto,
-                    .is_tuple = false,
-                    .decls = &[_]std.builtin.Type.Declaration{},
-                    .fields = fields,
-                } };
-                const resultingType = @Type(resultingTypeInfo);
-                var result: resultingType = undefined;
-                while (info.Union.tag_type) |UnionTagType| {
-                    inline for (info.Union.fields) |u_field| {
-                        if (value == @field(UnionTagType, u_field.name)) {
-                            const field = @field(value, u_field.name);
-                            if (comptime std.meta.trait.hasFn("jsonTag")(T)) {
-                                @field(result, T.jsonTag()) = @tagName(value);
-                            }
-                            switch (@TypeOf(field)) {
-                                .Union => {
-                                    info = @typeInfo(@TypeOf(field));
-                                    continue;
-                                },
-                                else => {
-                                    @field(result, "value") = value;
-                                    break;
-                                },
-                            }
-                        }
-                    }
-                }
-                return stringify(result, options, out_stream);
-            }
-
             const info = @typeInfo(T).Union;
             if (info.tag_type) |UnionTagType| {
                 inline for (info.fields) |u_field| {
                     if (value == @field(UnionTagType, u_field.name)) {
+                        if (comptime std.meta.trait.hasFn("jsonTag")(T)) {
+                            try out_stream.writeByte('{');
+                            var child_options = options;
+                            if (child_options.whitespace) |*child_whitespace| {
+                                child_whitespace.indent_level += 1;
+                            }
+                            if (child_options.whitespace) |child_whitespace| {
+                                try child_whitespace.outputIndent(out_stream);
+                            }
+                            try encodeJsonString(T.jsonTag(), options, out_stream);
+                            try out_stream.writeByte(':');
+                            if (child_options.whitespace) |child_whitespace| {
+                                if (child_whitespace.separator) {
+                                    try out_stream.writeByte(' ');
+                                }
+                            }
+                            try encodeJsonString(u_field.name, options, out_stream);
+
+                            const field = @field(value, u_field.name);
+                            const result = switch (@typeInfo(@TypeOf(field))) {
+                                .Struct => |S| {
+                                    inline for (S.fields) |Field| {
+                                        // don't include void fields
+                                        if (Field.type == void) continue;
+
+                                        var emit_field = true;
+
+                                        // don't include optional fields that are null when emit_null_optional_fields is set to false
+                                        if (@typeInfo(Field.type) == .Optional) {
+                                            if (options.emit_null_optional_fields == false) {
+                                                if (@field(field, Field.name) == null) {
+                                                    emit_field = false;
+                                                }
+                                            }
+                                        }
+
+                                        if (emit_field) {
+                                            try out_stream.writeByte(',');
+                                            if (child_options.whitespace) |child_whitespace| {
+                                                try child_whitespace.outputIndent(out_stream);
+                                            }
+                                            try encodeJsonString(Field.name, options, out_stream);
+                                            try out_stream.writeByte(':');
+                                            if (child_options.whitespace) |child_whitespace| {
+                                                if (child_whitespace.separator) {
+                                                    try out_stream.writeByte(' ');
+                                                }
+                                            }
+                                            try stringify(@field(field, Field.name), child_options, out_stream);
+                                        }
+                                    }
+                                },
+                                .Void => {},
+                                else => {
+                                    try out_stream.writeByte(',');
+                                    if (child_options.whitespace) |child_whitespace| {
+                                        try child_whitespace.outputIndent(out_stream);
+                                    }
+                                    try encodeJsonString("value", options, out_stream);
+                                    try out_stream.writeByte(':');
+                                    if (child_options.whitespace) |child_whitespace| {
+                                        if (child_whitespace.separator) {
+                                            try out_stream.writeByte(' ');
+                                        }
+                                    }
+                                    std.debug.print("field: {any}\n", .{field});
+                                    try stringify(field, child_options, out_stream);
+                                },
+                            };
+
+                            if (options.whitespace) |whitespace| {
+                                try whitespace.outputIndent(out_stream);
+                            }
+                            try out_stream.writeByte('}');
+                            return result;
+                        }
+
                         return try stringify(@field(value, u_field.name), options, out_stream);
                     }
                 }

@@ -154,7 +154,7 @@ const Interaction = union(enum) {
     rotate: SingleActionState,
     scale: SingleActionState,
     pub fn jsonTag() []const u8 {
-        return "interaction";
+        return "type";
     } // TODO: implement with custom json parser/stringifier
 };
 
@@ -165,7 +165,7 @@ const Tweak = union(enum) {
         dragged_index: usize,
     },
     pub fn jsonTag() []const u8 {
-        return "tweak";
+        return "type";
     } // TODO: implement with custom json parser/stringifier
 };
 
@@ -821,7 +821,7 @@ pub fn main() !void {
 
     // Save state to json file
     {
-        const state_json = try json.stringifyAlloc(allocator, &state, .{});
+        const state_json = try json.stringifyAlloc(allocator, &state, .{ .whitespace = .{} });
         defer allocator.free(state_json);
 
         try std.fs.cwd().writeFile("state.json", state_json);
