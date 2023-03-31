@@ -139,34 +139,40 @@ const SingleActionState = struct {
     activation_position: vec2,
 };
 
+const Selected = union(enum) {
+    points: []usize,
+    lines: []usize,
+};
+
+const Interaction = union(enum) {
+    tweak: Tweak,
+    box_select: struct {
+        start_position: vec2,
+    },
+    circle_select,
+    move: SingleActionState,
+    rotate: SingleActionState,
+    scale: SingleActionState,
+    pub fn jsonTag() []const u8 {
+        return "interaction";
+    } // TODO: implement with custom json parser/stringifier
+};
+
+const Tweak = union(enum) {
+    idle,
+    dragging: struct {
+        drag_offset: vec2,
+        dragged_index: usize,
+    },
+    pub fn jsonTag() []const u8 {
+        return "tweak";
+    } // TODO: implement with custom json parser/stringifier
+};
+
 const State = struct {
     line: []vec2,
-    selected: union(enum) {
-        points: []usize,
-        lines: []usize,
-    },
-    interaction: union(enum) {
-        tweak: union(enum) {
-            idle,
-            dragging: struct {
-                drag_offset: vec2,
-                dragged_index: usize,
-            },
-            pub fn jsonTag() []const u8 {
-                return "tweak";
-            } // TODO: implement with custom json parser/stringifier
-        },
-        box_select: struct {
-            start_position: vec2,
-        },
-        circle_select,
-        move: SingleActionState,
-        rotate: SingleActionState,
-        scale: SingleActionState,
-        pub fn jsonTag() []const u8 {
-            return "interaction";
-        } // TODO: implement with custom json parser/stringifier
-    },
+    selected: Selected,
+    interaction: Interaction,
 };
 
 const settings = .{

@@ -2331,18 +2331,24 @@ pub fn stringify(
                 return value.jsonStringify(options, out_stream);
             }
 
-            const info = @typeInfo(T).Union;
-
-            if (info.tag_type) |UnionTagType| {
-                inline for (info.fields) |u_field| {
-                    if (value == @field(UnionTagType, u_field.name)) {
-                        const field = @field(value, u_field.name);
-                        if (comptime std.meta.trait.hasFn("jsonTag")(T)) {
+            if (comptime std.meta.trait.hasFn("jsonTag")(T)) {
+                comptime var info = @typeInfo(T).Union;
+                if (info.tag_type) |UnionTagType| {
+                    inline for (info.fields) |u_field| {
+                        if (value == @field(UnionTagType, u_field.name)) {
+                            const field = @field(value, u_field.name);
                             const toStringify: struct { tag: []const u8, value: @TypeOf(field) } = .{ .tag = T.jsonTag(), .value = field };
                             return try stringify(toStringify, options, out_stream);
                         }
+                    }
+                }
+            }
 
-                        return try stringify(field, options, out_stream);
+            const info = @typeInfo(T).Union;
+            if (info.tag_type) |UnionTagType| {
+                inline for (info.fields) |u_field| {
+                    if (value == @field(UnionTagType, u_field.name)) {
+                        return try stringify(@field(value, u_field.name), options, out_stream);
                     }
                 }
             } else {
