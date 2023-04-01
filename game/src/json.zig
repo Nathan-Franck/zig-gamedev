@@ -1516,14 +1516,13 @@ fn parseInternal(
                     union_token = try tokens.next() orelse return error.UnexpectedEndOfJson;
                     if (union_token != .String) return error.UnexpectedToken;
                     const unionName = union_token.String.slice(tokens.slice, tokens.i - 1);
-                    // try each of the union fields until we find one that matches
                     inline for (unionInfo.fields) |u_field| {
                         if (mem.eql(u8, u_field.name, unionName)) {
                             switch (@typeInfo(u_field.type)) {
                                 .Struct => {
-                                    var newOptions = options;
-                                    newOptions.ignore_unknown_fields = true; // ignore the "value" field TODO extract the struct parsing code to exclude the object start/end tokens
-                                    if (parseInternal(u_field.type, token, &struct_tokens, newOptions)) |result| {
+                                    var temp_options = options;
+                                    temp_options.ignore_unknown_fields = true; // ignore the "value" field TODO extract the struct parsing code to exclude the object start/end tokens
+                                    if (parseInternal(u_field.type, token, &struct_tokens, temp_options)) |result| {
                                         while (try tokens.next()) |endToken| {
                                             switch (endToken) {
                                                 .ObjectEnd => break,
@@ -1745,8 +1744,6 @@ fn parseInternal(
 
                                 try arraylist.ensureUnusedCapacity(1);
 
-                                // Debug log name of field
-                                std.debug.print("Parsing slice field: {}\n", .{ptrInfo.child});
                                 const v = try parseInternal(ptrInfo.child, tok, tokens, options);
                                 arraylist.appendAssumeCapacity(v);
                             }
@@ -1757,8 +1754,6 @@ fn parseInternal(
                             }
 
                             const result = try arraylist.toOwnedSlice();
-
-                            std.debug.print("Resulting slice: {}\n", .{@TypeOf(result[0])});
 
                             return result;
                         },
@@ -1801,7 +1796,6 @@ fn parseInternal(
                     while (i < vectorInfo.len) : (i += 1) {
                         r[i] = try parse(vectorInfo.child, tokens, child_options);
                     }
-                    std.debug.print("Parsing vector field: {}, with output value: {}\n", .{ vectorInfo.child, r });
 
                     const tok = (try tokens.next()) orelse return error.UnexpectedEndOfJson;
                     switch (tok) {
@@ -1893,8 +1887,6 @@ pub fn parseFree(comptime T: type, value: T, options: ParseOptions) void {
                         }
                     }
                     if (should_free) {
-                        // Debug the field name
-                        std.debug.print("Freeing field: {s}\n", .{field.name});
                         parseFree(field.type, @field(value, field.name), options);
                     }
                 }
@@ -2478,7 +2470,6 @@ pub fn stringify(
                                             try out_stream.writeByte(' ');
                                         }
                                     }
-                                    std.debug.print("field: {any}\n", .{field});
                                     try stringify(field, child_options, out_stream);
                                 },
                             };

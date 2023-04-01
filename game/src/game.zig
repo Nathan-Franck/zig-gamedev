@@ -797,7 +797,7 @@ pub fn main() !void {
 
         var token_stream = json.TokenStream.init(state_json);
         state = try json.parse(State, &token_stream, .{ .allocator = allocator });
-        std.debug.print("{}", .{state});
+        std.debug.print("{}\n", .{state});
 
         std.log.info("Loaded state from state.json.", .{});
     }
@@ -821,6 +821,8 @@ pub fn main() !void {
     {
         const state_json = try json.stringifyAlloc(allocator, &state, .{ .whitespace = .{} });
         defer allocator.free(state_json);
+
+        std.debug.print("{s}\n", .{state_json});
 
         try std.fs.cwd().writeFile("state.json", state_json);
 
