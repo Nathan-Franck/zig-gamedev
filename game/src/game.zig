@@ -142,6 +142,9 @@ const SingleActionState = struct {
 const Selected = union(enum) {
     points: []usize,
     lines: []usize,
+    pub fn jsonTag() []const u8 {
+        return "type";
+    }
 };
 
 const Interaction = union(enum) {
@@ -793,17 +796,12 @@ pub fn main() !void {
         defer allocator.free(state_json);
 
         var token_stream = json.TokenStream.init(state_json);
-        state = json.parse(State, &token_stream, .{ .allocator = allocator }) catch state;
+        state = try json.parse(State, &token_stream, .{ .allocator = allocator });
         std.debug.print("{}", .{state});
 
         std.log.info("Loaded state from state.json.", .{});
     }
     defer json.parseFree(State, state, .{ .allocator = allocator });
-
-    // var thinger: struct { x: i32, y: i32 } = .{ .x = 0, .y = 0 };
-    // std.debug.print("{}\n", .{thinger});
-    // @field(thinger, "x") = 1;
-    // std.debug.print("{}\n", .{thinger});
 
     while (!window.shouldClose()) {
         // Run slower while the window is not focused.

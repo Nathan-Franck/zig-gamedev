@@ -1490,6 +1490,84 @@ fn parseInternal(
         },
         .Union => |unionInfo| {
             if (unionInfo.tag_type) |_| {
+                if (comptime std.meta.trait.hasFn("jsonTag")(T)) {
+                    // Read this like a struct ---
+                    // Always contains a field with the key of T.jsonTag() and value containing the name of the chosen union
+                    // If the chosen union field is a struct, the rest of the struct is populated with it's fields
+                    // Otherwise a single field is populated with the value of the union - key "value"
+                    // eg
+                    // {
+                    //     "json_tag": "foo",
+                    //     "struct_fieldA": 1,
+                    //     "struct_fieldB": 2,
+                    // }
+                    // OR
+                    // {
+                    //     "json_tag": "foo",
+                    //     "value": 1,
+                    // }
+                    var struct_tokens = tokens.*;
+                    var union_token = token;
+                    if (union_token != .ObjectBegin) return error.UnexpectedToken;
+                    union_token = try tokens.next() orelse return error.UnexpectedEndOfJson;
+                    if (union_token != .String) return error.UnexpectedToken;
+                    const key = union_token.String.slice(tokens.slice, tokens.i - 1);
+                    if (!mem.eql(u8, key, T.jsonTag())) return error.UnexpectedToken;
+                    union_token = try tokens.next() orelse return error.UnexpectedEndOfJson;
+                    if (union_token != .String) return error.UnexpectedToken;
+                    const unionName = union_token.String.slice(tokens.slice, tokens.i - 1);
+                    // try each of the union fields until we find one that matches
+                    inline for (unionInfo.fields) |u_field| {
+                        if (mem.eql(u8, u_field.name, unionName)) {
+                            switch (@typeInfo(u_field.type)) {
+                                .Struct => {
+                                    var newOptions = options;
+                                    newOptions.ignore_unknown_fields = true; // ignore the "value" field TODO extract the struct parsing code to exclude the object start/end tokens
+                                    if (parseInternal(u_field.type, token, &struct_tokens, newOptions)) |result| {
+                                        while (try tokens.next()) |endToken| {
+                                            switch (endToken) {
+                                                .ObjectEnd => break,
+                                                else => continue,
+                                            }
+                                        }
+                                        return @unionInit(T, u_field.name, result);
+                                    } else |err| {
+                                        return err;
+                                    }
+                                },
+                                .Void => {
+                                    union_token = try tokens.next() orelse return error.UnexpectedEndOfJson;
+                                    switch (union_token) {
+                                        .ObjectEnd => {
+                                            return @unionInit(T, u_field.name, {});
+                                        },
+                                        else => return error.UnexpectedToken,
+                                    }
+                                },
+                                else => {
+                                    union_token = try tokens.next() orelse return error.UnexpectedEndOfJson;
+                                    switch (union_token) {
+                                        .String => |string|{
+                                            const keyB = string.slice(tokens.slice, tokens.i - 1);
+                                            if (mem.eql(u8, keyB, "value")) {
+                                                union_token = try tokens.next() orelse return error.UnexpectedEndOfJson;
+                                                var result = @unionInit(T, u_field.name, try parseInternal(u_field.type, union_token, tokens, options));
+                                                union_token = try tokens.next() orelse return error.UnexpectedEndOfJson;
+                                                if (union_token != .ObjectEnd) return error.UnexpectedToken;
+                                                return result;
+                                            } else {
+                                                return error.UnexpectedToken;
+                                            }
+                                        },
+                                        else => return error.UnexpectedToken,
+                                    }
+                                },
+                            }
+                        }
+                    }
+                } else {
+                    return error.UnexpectedToken;
+                }
                 // try each of the union fields until we find one that matches
                 inline for (unionInfo.fields) |u_field| {
                     // take a copy of tokens so we can withhold mutations until success
