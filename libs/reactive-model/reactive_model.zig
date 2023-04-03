@@ -181,23 +181,78 @@ test "Array List" {
 }
 
 test "Array list can be used in ResponsiveModel" {
+    const List = std.ArrayList(u21);
     var model = ResponsiveModel(.{
-        struct {
+        struct { // take value and append to list
             source: *?u21,
-            list: *std.ArrayList(u21),
+            list: *List,
             fn respond(self: @This()) void {
                 self.list.append(self.source.*.?) catch unreachable;
                 self.source.* = null;
             }
         },
+        struct { // count list into new field
+            list: List,
+            count: *usize,
+            fn respond(self: @This()) void {
+                self.count.* = self.list.items.len;
+            }
+        },
     }).init(.{
         .source = null,
         .list = std.ArrayList(u21).init(std.testing.allocator),
+        .count = 0,
     });
     defer model.state.list.deinit();
 
     model.set(.{ .source = '☔' });
+    model.set(.{ .source = '😀' });
 
     try std.testing.expectEqual(model.state.list.items[0], '☔');
+    try std.testing.expectEqual(model.state.list.items[1], '😀');
     try std.testing.expectEqual(model.state.source, null);
+    try std.testing.expectEqual(model.state.count, 2);
 }
+
+test "Detect mutation of slices" {
+    const List = std.ArrayList(u21);
+    var list = List.init(std.testing.allocator);
+    defer list.deinit();
+
+    try list.append('☔');
+    try list.append('😀');
+
+    var model = ResponsiveModel(.{
+        struct { // change first value of list
+            first_value: ?u21,
+            list: List,
+            fn respond(self: @This()) void {
+                self.list.items[0] = self.first_value.?;
+            }
+        },
+        struct { // count list into new field
+            list: List,
+            count: *usize,
+            fn respond(self: @This()) void {
+                self.count.* = self.list.items.len;
+            }
+        },
+    }).init(.{
+        .first_value = null,
+        .list = list,
+        .count = 0,
+    });
+
+    model.set(.{ .first_value = '🌧' });
+
+    try std.testing.expectEqual(model.state.list.items[0], '🌧');
+    try std.testing.expectEqual(model.state.list.items[1], '😀');
+    // try std.testing.expectEqual(model.state.count, 2); CURRENTLY THIS DOESN'T WORK
+}
+
+// test "Modify the value referenced in a const pointer" {
+//     var string: []const u8 = "hello";
+//     var ptr: *const u8 = &string[0];
+//     ptr.* = 'b';
+//     try std.testing.expectEqualStrings(string, "bello");
+// }
