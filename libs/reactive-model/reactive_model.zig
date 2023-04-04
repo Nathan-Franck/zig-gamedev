@@ -4,7 +4,7 @@ const std = @import("std");
 // If a system requests a pointer to a member of the model, we should inform
 // all down-stream systems of a possible change.
 fn ResponsiveModel(comptime systems: anytype) type {
-    const T = blk: {
+    const T = T: {
         comptime var fields: []const std.builtin.Type.StructField = &.{};
         inline for (systems) |system| {
             const SystemValues = @typeInfo(@TypeOf(system.respond)).Fn.params[0].type.?;
@@ -35,7 +35,7 @@ fn ResponsiveModel(comptime systems: anytype) type {
             .layout = .Auto,
             .is_tuple = false,
         } };
-        break :blk @Type(t_type_info);
+        break :T @Type(t_type_info);
     };
     return struct {
         const Self = @This();
@@ -51,13 +51,13 @@ fn ResponsiveModel(comptime systems: anytype) type {
                     if (system == r) continue;
                 if (has_field: {
                     const SystemValues = @typeInfo(@TypeOf(system.respond)).Fn.params[0].type.?;
-                    break :has_field inline for (@typeInfo(SystemValues).Struct.fields) |next_field| {
+                    inline for (@typeInfo(SystemValues).Struct.fields) |next_field| {
                         if (comptime std.mem.eql(u8, next_field.name, changed_field.name)) {
                             const next_field_type_info = @typeInfo(next_field.type);
                             if (next_field_type_info != .Pointer or next_field_type_info.Pointer.size != .One)
-                                break true;
+                                break :has_field true;
                         }
-                    } else false;
+                    } else break :has_field false;
                 } and !already_next: {
                     inline for (next_responders) |next_responder| {
                         if (next_responder == system) break :already_next true;
