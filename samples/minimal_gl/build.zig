@@ -10,6 +10,12 @@ pub fn build(b: *std.Build, options: Options) *std.Build.CompileStep {
         .optimize = options.optimize,
     });
 
+    const zsdl_pkg = @import("../../build.zig").zsdl_pkg;
+    const zopengl_pkg = @import("../../build.zig").zopengl_pkg;
+
+    zsdl_pkg.link(exe);
+    zopengl_pkg.link(exe);
+
     return exe;
 }
 

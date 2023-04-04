@@ -11,6 +11,16 @@ pub fn build(b: *std.Build, options: Options) *std.Build.CompileStep {
         .optimize = options.optimize,
     });
 
+    const zwin32_pkg = @import("../../build.zig").zwin32_pkg;
+    const zd3d12_pkg = @import("../../build.zig").zd3d12_pkg;
+    const common_pkg = @import("../../build.zig").common_pkg;
+    const zmesh_pkg = @import("../../build.zig").zmesh_pkg;
+
+    zwin32_pkg.link(exe, .{ .d3d12 = true });
+    zmesh_pkg.link(exe);
+    common_pkg.link(exe);
+    zd3d12_pkg.link(exe);
+
     const exe_options = b.addOptions();
     exe.addOptions("build_options", exe_options);
     exe_options.addOption([]const u8, "content_dir", content_dir);
