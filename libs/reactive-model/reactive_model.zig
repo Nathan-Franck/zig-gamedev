@@ -44,23 +44,38 @@ fn ResponsiveModel(comptime systems: anytype) type {
         fn init(state: T) Self {
             return Self{ .state = state };
         }
+        fn retrieveRespondersOnField(comptime responders: []const type, comptime changed_field: std.builtin.Type.StructField, comptime ignore_responder: ?type) []const type {
+            comptime var next_responders: []const type = responders;
+            inline for (systems) |system| {
+                if (ignore_responder) |r|
+                    if (system == r) continue;
+                const SystemValues = @typeInfo(@TypeOf(system.respond)).Fn.params[0].type.?;
+                const has_field = inline for (@typeInfo(SystemValues).Struct.fields) |next_field| {
+                    if (comptime std.mem.eql(u8, next_field.name, changed_field.name)) {
+                        const next_field_type_info = @typeInfo(next_field.type);
+                        if (next_field_type_info != .Pointer or next_field_type_info.Pointer.size != .One)
+                            break true;
+                    }
+                } else false;
+                if (has_field) {
+                    const already_next = blk: {
+                        inline for (next_responders) |next_responder| {
+                            if (next_responder == system) break :blk true;
+                        }
+                        break :blk false;
+                    };
+                    if (!already_next) {
+                        next_responders = next_responders ++ .{system};
+                    }
+                }
+            }
+            return next_responders;
+        }
         fn set(self: *Self, partial_model: anytype) void {
             comptime var responders: []const type = &[_]type{};
             inline for (@typeInfo(@TypeOf(partial_model)).Struct.fields) |field| {
                 @field(self.state, field.name) = @field(partial_model, field.name);
-                inline for (systems) |system| {
-                    if (@hasField(system, field.name)) {
-                        const already_next = blk: {
-                            inline for (responders) |next_responder| {
-                                if (next_responder == system) break :blk true;
-                            }
-                            break :blk false;
-                        };
-                        if (!already_next) {
-                            responders = responders ++ &[_]type{system};
-                        }
-                    }
-                }
+                responders = retrieveRespondersOnField(responders, field, null);
             }
             inline while (responders.len > 0) {
                 comptime var next_responders: []const type = &.{};
@@ -73,20 +88,7 @@ fn ResponsiveModel(comptime systems: anytype) type {
                             @field(system_values, system_field.name) = @field(self.state, system_field.name);
                         } else {
                             @field(system_values, system_field.name) = &@field(self.state, system_field.name);
-                            inline for (systems) |system| {
-                                if (system == responder) continue;
-                                if (@hasField(system, system_field.name)) {
-                                    const already_next = blk: {
-                                        inline for (next_responders) |next_responder| {
-                                            if (next_responder == system) break :blk true;
-                                        }
-                                        break :blk false;
-                                    };
-                                    if (!already_next) {
-                                        next_responders = next_responders ++ .{system};
-                                    }
-                                }
-                            }
+                            next_responders = retrieveRespondersOnField(next_responders, system_field, responder);
                         }
                     }
                     responder.respond(system_values);
@@ -184,11 +186,10 @@ test "Array list can be used in ResponsiveModel" {
     const List = std.ArrayList(u21);
     var model = ResponsiveModel(.{
         struct { // take value and append to list
-            source: *?u21,
+            source: u21,
             list: *List,
             fn respond(self: @This()) void {
-                self.list.append(self.source.*.?) catch unreachable;
-                self.source.* = null;
+                self.list.append(self.source) catch unreachable;
             }
         },
         struct { // count list into new field
@@ -199,7 +200,7 @@ test "Array list can be used in ResponsiveModel" {
             }
         },
     }).init(.{
-        .source = null,
+        .source = undefined,
         .list = std.ArrayList(u21).init(std.testing.allocator),
         .count = 0,
     });
@@ -210,7 +211,6 @@ test "Array list can be used in ResponsiveModel" {
 
     try std.testing.expectEqual(model.state.list.items[0], '☔');
     try std.testing.expectEqual(model.state.list.items[1], '😀');
-    try std.testing.expectEqual(model.state.source, null);
     try std.testing.expectEqual(model.state.count, 2);
 }
 
@@ -225,7 +225,7 @@ test "Detect mutation of slices" {
     var model = ResponsiveModel(.{
         struct { // change first value of list
             first_value: ?u21,
-            list: List,
+            list: *List,
             fn respond(self: @This()) void {
                 self.list.items[0] = self.first_value.?;
             }
@@ -247,12 +247,5 @@ test "Detect mutation of slices" {
 
     try std.testing.expectEqual(model.state.list.items[0], '🌧');
     try std.testing.expectEqual(model.state.list.items[1], '😀');
-    // try std.testing.expectEqual(model.state.count, 2); CURRENTLY THIS DOESN'T WORK
+    try std.testing.expectEqual(model.state.count, 2);
 }
-
-// test "Modify the value referenced in a const pointer" {
-//     var string: []const u8 = "hello";
-//     var ptr: *const u8 = &string[0];
-//     ptr.* = 'b';
-//     try std.testing.expectEqualStrings(string, "bello");
-// }
