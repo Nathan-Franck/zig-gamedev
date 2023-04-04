@@ -44,15 +44,19 @@ fn ResponsiveModel(comptime systems: anytype) type {
         fn init(state: T) Self {
             return Self{ .state = state };
         }
-        fn retrieveRespondersOnField(comptime responders: []const type, comptime changed_field: std.builtin.Type.StructField, comptime ignore_responder: ?type) []const type {
-            comptime var next_responders: []const type = responders;
+        fn retrieveRespondersOnField(comptime args: struct {
+            responders: []const type,
+            changed_field: std.builtin.Type.StructField,
+            ignore: ?type,
+        }) []const type {
+            comptime var next_responders: []const type = args.responders;
             inline for (systems) |system| {
-                if (ignore_responder) |r|
+                if (args.ignore) |r|
                     if (system == r) continue;
                 if (has_field: {
                     const SystemValues = @typeInfo(@TypeOf(system.respond)).Fn.params[0].type.?;
                     inline for (@typeInfo(SystemValues).Struct.fields) |next_field| {
-                        if (comptime std.mem.eql(u8, next_field.name, changed_field.name)) {
+                        if (comptime std.mem.eql(u8, next_field.name, args.changed_field.name)) {
                             const next_field_type_info = @typeInfo(next_field.type);
                             if (next_field_type_info != .Pointer or next_field_type_info.Pointer.size != .One)
                                 break :has_field true;
@@ -73,20 +77,28 @@ fn ResponsiveModel(comptime systems: anytype) type {
             comptime var responders: []const type = &[_]type{};
             inline for (@typeInfo(@TypeOf(partial_model)).Struct.fields) |field| {
                 @field(self.state, field.name) = @field(partial_model, field.name);
-                responders = retrieveRespondersOnField(responders, field, null);
+                responders = retrieveRespondersOnField(.{
+                    .responders = responders,
+                    .changed_field = field,
+                    .ignore = null,
+                });
             }
             inline while (responders.len > 0) {
                 comptime var next_responders: []const type = &.{};
                 inline for (responders) |responder| {
                     const SystemValues = @typeInfo(@TypeOf(responder.respond)).Fn.params[0].type.?;
                     var system_values: SystemValues = undefined;
-                    inline for (@typeInfo(SystemValues).Struct.fields) |system_field| {
-                        const field_type_info = @typeInfo(system_field.type);
+                    inline for (@typeInfo(SystemValues).Struct.fields) |field| {
+                        const field_type_info = @typeInfo(field.type);
                         if (field_type_info != .Pointer or field_type_info.Pointer.size != .One) {
-                            @field(system_values, system_field.name) = @field(self.state, system_field.name);
+                            @field(system_values, field.name) = @field(self.state, field.name);
                         } else {
-                            @field(system_values, system_field.name) = &@field(self.state, system_field.name);
-                            next_responders = retrieveRespondersOnField(next_responders, system_field, responder);
+                            @field(system_values, field.name) = &@field(self.state, field.name);
+                            next_responders = retrieveRespondersOnField(.{
+                                .responders = next_responders,
+                                .changed_field = field,
+                                .ignore = responder,
+                            });
                         }
                     }
                     responder.respond(system_values);
