@@ -49,24 +49,22 @@ fn ResponsiveModel(comptime systems: anytype) type {
             inline for (systems) |system| {
                 if (ignore_responder) |r|
                     if (system == r) continue;
-                const SystemValues = @typeInfo(@TypeOf(system.respond)).Fn.params[0].type.?;
-                const has_field = inline for (@typeInfo(SystemValues).Struct.fields) |next_field| {
-                    if (comptime std.mem.eql(u8, next_field.name, changed_field.name)) {
-                        const next_field_type_info = @typeInfo(next_field.type);
-                        if (next_field_type_info != .Pointer or next_field_type_info.Pointer.size != .One)
-                            break true;
-                    }
-                } else false;
-                if (has_field) {
-                    const already_next = blk: {
-                        inline for (next_responders) |next_responder| {
-                            if (next_responder == system) break :blk true;
+                if (has_field: {
+                    const SystemValues = @typeInfo(@TypeOf(system.respond)).Fn.params[0].type.?;
+                    break :has_field inline for (@typeInfo(SystemValues).Struct.fields) |next_field| {
+                        if (comptime std.mem.eql(u8, next_field.name, changed_field.name)) {
+                            const next_field_type_info = @typeInfo(next_field.type);
+                            if (next_field_type_info != .Pointer or next_field_type_info.Pointer.size != .One)
+                                break true;
                         }
-                        break :blk false;
-                    };
-                    if (!already_next) {
-                        next_responders = next_responders ++ .{system};
+                    } else false;
+                } and !already_next: {
+                    inline for (next_responders) |next_responder| {
+                        if (next_responder == system) break :already_next true;
                     }
+                    break :already_next false;
+                }) {
+                    next_responders = next_responders ++ .{system};
                 }
             }
             return next_responders;
@@ -216,34 +214,35 @@ test "Array list can be used in ResponsiveModel" {
 
 test "Detect mutation of slices" {
     const List = std.ArrayList(u21);
+
+    const AddElementToListSystem = struct {
+        first_value: ?u21,
+        list: *List,
+        fn respond(self: @This()) void {
+            self.list.items[0] = self.first_value.?;
+        }
+    };
+
+    const CountListSystem = struct {
+        list: List,
+        count: *usize,
+        fn respond(self: @This()) void {
+            self.count.* = self.list.items.len;
+        }
+    };
+
+    var model = ResponsiveModel(.{
+        AddElementToListSystem,
+        CountListSystem,
+    }).init(undefined);
+
     var list = List.init(std.testing.allocator);
     defer list.deinit();
 
     try list.append('☔');
     try list.append('😀');
 
-    var model = ResponsiveModel(.{
-        struct { // change first value of list
-            first_value: ?u21,
-            list: *List,
-            fn respond(self: @This()) void {
-                self.list.items[0] = self.first_value.?;
-            }
-        },
-        struct { // count list into new field
-            list: List,
-            count: *usize,
-            fn respond(self: @This()) void {
-                self.count.* = self.list.items.len;
-            }
-        },
-    }).init(.{
-        .first_value = null,
-        .list = list,
-        .count = 0,
-    });
-
-    model.set(.{ .first_value = '🌧' });
+    model.set(.{ .list = list, .first_value = '🌧' });
 
     try std.testing.expectEqual(model.state.list.items[0], '🌧');
     try std.testing.expectEqual(model.state.list.items[1], '😀');
