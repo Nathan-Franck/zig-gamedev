@@ -40,19 +40,18 @@ fn ResponsiveModel(comptime systems: anytype) type {
     return struct {
         const Self = @This();
         state: T,
-        // listeners:
         fn init(state: T) Self {
             return Self{ .state = state };
         }
         fn retrieveRespondersOnField(comptime args: struct {
             responders: []const type,
             changed_field: std.builtin.Type.StructField,
-            ignore: ?type,
+            ignore: ?type = null,
         }) []const type {
             comptime var next_responders: []const type = args.responders;
             inline for (systems) |system| {
-                if (args.ignore) |r|
-                    if (system == r) continue;
+                if (args.ignore) |ignore|
+                    if (system == ignore) continue;
                 if (has_field: {
                     const SystemValues = @typeInfo(@TypeOf(system.respond)).Fn.params[0].type.?;
                     inline for (@typeInfo(SystemValues).Struct.fields) |next_field| {
@@ -80,7 +79,6 @@ fn ResponsiveModel(comptime systems: anytype) type {
                 responders = retrieveRespondersOnField(.{
                     .responders = responders,
                     .changed_field = field,
-                    .ignore = null,
                 });
             }
             inline while (responders.len > 0) {

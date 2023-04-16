@@ -3,6 +3,8 @@ const std = @import("std");
 
 const min_zig_version = std.SemanticVersion{ .major = 0, .minor = 11, .patch = 0, .pre = "dev.2154" };
 
+const fetchAndSetup = false;
+
 pub fn build(b: *std.Build) void {
     //
     // Options and system checks
@@ -166,6 +168,8 @@ fn packagesWindows(b: *std.Build, options: Options) void {
 }
 
 fn samplesCrossPlatform(b: *std.Build, options: Options) void {
+    const game = @import("game/build.zig");
+
     const minimal_gl = @import("samples/minimal_gl/build.zig");
     const triangle_wgpu = @import("samples/triangle_wgpu/build.zig");
     const procedural_mesh_wgpu = @import("samples/procedural_mesh_wgpu/build.zig");
@@ -178,6 +182,8 @@ fn samplesCrossPlatform(b: *std.Build, options: Options) void {
     const layers_wgpu = @import("samples/layers_wgpu/build.zig");
     const gamepad_wgpu = @import("samples/gamepad_wgpu/build.zig");
     const physics_test_wgpu = @import("samples/physics_test_wgpu/build.zig");
+
+    install(b, game.build(b, options), "game");
 
     install(b, minimal_gl.build(b, options), "minimal_gl");
     install(b, triangle_wgpu.build(b, options), "triangle_wgpu");

@@ -790,6 +790,8 @@ pub fn main() !void {
     };
     defer destroy(allocator, demo);
 
+    // std.debug.print("{}", .{demo});
+
     // Load state from json file.
     {
         const state_json = try std.fs.cwd().readFileAlloc(allocator, "state.json", 10_000);
