@@ -11,52 +11,43 @@ pub fn main() !void {
 
     var vertices = try ArrayList(vec3).initCapacity(allocator, 8);
     defer vertices.deinit();
-    try vertices.append(.{ -1.0, -1.0, -1.0 });
-    try vertices.append(.{ 1.0, -1.0, -1.0 });
-    try vertices.append(.{ 1.0, 1.0, -1.0 });
-    try vertices.append(.{ -1.0, 1.0, -1.0 });
-    try vertices.append(.{ -1.0, -1.0, 1.0 });
-    try vertices.append(.{ 1.0, -1.0, 1.0 });
-    try vertices.append(.{ 1.0, 1.0, 1.0 });
-    try vertices.append(.{ -1.0, 1.0, 1.0 });
+    var staticVertices = [_]vec3 {
+        .{ -1.0, -1.0, -1.0 },
+        .{ 1.0, -1.0, -1.0 },
+        .{ 1.0, 1.0, -1.0 },
+        .{ -1.0, 1.0, -1.0 },
+        .{ -1.0, -1.0, 1.0 },
+        .{ 1.0, -1.0, 1.0 },
+        .{ 1.0, 1.0, 1.0 },
+        .{ -1.0, 1.0, 1.0 },
+    };
+    for (staticVertices) |v| {
+        try vertices.append(v);
+    }
 
     var faces = try ArrayList(ArrayList(u32)).initCapacity(allocator, 6);
     defer faces.deinit();
-    try faces.append(face: {
-        var arrayList = ArrayList(u32).init(allocator);
-        try arrayList.appendSlice(&.{ 0, 1, 2, 3 });
-        break :face arrayList;
-    });
-    try faces.append(face: {
-        var arrayList = ArrayList(u32).init(allocator);
-        try arrayList.appendSlice(&.{ 4, 5, 6, 7 });
-        break :face arrayList;
-    });
-    try faces.append(face: {
-        var arrayList = ArrayList(u32).init(allocator);
-        try arrayList.appendSlice(&.{ 7, 6, 2, 3 });
-        break :face arrayList;
-    });
-    try faces.append(face: {
-        var arrayList = ArrayList(u32).init(allocator);
-        try arrayList.appendSlice(&.{ 4, 7, 3, 0 });
-        break :face arrayList;
-    });
-    try faces.append(face: {
-        var arrayList = ArrayList(u32).init(allocator);
-        try arrayList.appendSlice(&.{ 5, 4, 0, 1 });
-        break :face arrayList;
-    });
-    try faces.append(face: {
-        var arrayList = ArrayList(u32).init(allocator);
-        try arrayList.appendSlice(&.{ 6, 5, 1, 2 });
-        break :face arrayList;
-    });
+
+    var staticFaces = [_][4]u32 {
+        .{ 0, 1, 2, 3 },
+        .{ 4, 5, 6, 7 },
+        .{ 7, 6, 2, 3 },
+        .{ 4, 7, 3, 0 },
+        .{ 5, 4, 0, 1 },
+        .{ 6, 5, 1, 2 },
+    };
+    for (staticFaces) |f| {
+        var face = try ArrayList(u32).initCapacity(allocator, 4);
+        try face.appendSlice(&f);
+        try faces.append(face);
+    }
+    defer for (faces.items) |f| {
+        f.deinit();
+    };
 
 
     var subdivided = try subdivideMesh(allocator, vertices.items[0..], faces.items[0..]);
     defer subdivided.deinit();
-    // _ = subdivided;
 
     std.debug.print("Vertices:\n", .{});
     for (subdivided.vertices.items) |v| {
@@ -64,11 +55,7 @@ pub fn main() !void {
     }
     std.debug.print("Faces:\n", .{});
     for (subdivided.faces.items) |f| {
-        std.debug.print("{?}\n", .{f});
-    }
-
-    for (faces.items) |f| {
-        f.deinit();
+        std.debug.print("{any}\n", .{f.items});
     }
 }
 
@@ -117,14 +104,14 @@ fn subdivideMesh(
             if (edgePoints.get(edgeKey)) |edge| {
                 try newFace.append(edge);
             } else {
-                var oppositeFacePoint = blk: {
+                var oppositeFacePoint = oppositeFacePoint: {
                     var oppositeFace = faces[getOppositeFaceIndex(f, faces, v1, v2)];
                     var x = vec3{ 0.0, 0.0, 0.0 };
                     for (oppositeFace.items) |v| {
                         x += vertices[v];
                     }
                     x /= @splat(3, @intToFloat(f32, f.items.len));
-                    break :blk x;
+                    break :oppositeFacePoint x;
                 };
                 const me = (vertices[v1] + vertices[v2]) / @splat(3, @as(f32, 2.0));
                 const ep = (facePoint + oppositeFacePoint + me * @splat(3, @as(f32, 2.0))) / @splat(3, @as(f32, 4.0));

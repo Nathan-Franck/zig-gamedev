@@ -225,7 +225,7 @@ test "Array list can be used in ResponsiveModel" {
 test "Detect mutation of slices" {
     const List = std.ArrayList(u21);
 
-    const AddElementToListSystem = struct {
+    const AssignFirstElementOfListSystem = struct {
         first_value: ?u21,
         list: *List,
         fn respond(self: @This()) void {
@@ -242,7 +242,7 @@ test "Detect mutation of slices" {
     };
 
     var model = ResponsiveModel(.{
-        AddElementToListSystem,
+        AssignFirstElementOfListSystem,
         CountListSystem,
     }).init(undefined);
 
