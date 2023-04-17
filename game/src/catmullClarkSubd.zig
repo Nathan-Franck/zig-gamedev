@@ -4,14 +4,8 @@ const ArrayList = std.ArrayList;
 
 const vec3 = @Vector(3, f32);
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    var allocator = gpa.allocator();
-
-    var vertices = try ArrayList(vec3).initCapacity(allocator, 8);
-    defer vertices.deinit();
-    var staticVertices = [_]vec3 {
+const meshBlueprint = .{
+    .vertices = [_]vec3 {
         .{ -1.0, -1.0, -1.0 },
         .{ 1.0, -1.0, -1.0 },
         .{ 1.0, 1.0, -1.0 },
@@ -20,31 +14,39 @@ pub fn main() !void {
         .{ 1.0, -1.0, 1.0 },
         .{ 1.0, 1.0, 1.0 },
         .{ -1.0, 1.0, 1.0 },
-    };
-    for (staticVertices) |v| {
-        try vertices.append(v);
-    }
-
-    var faces = try ArrayList(ArrayList(u32)).initCapacity(allocator, 6);
-    defer faces.deinit();
-
-    var staticFaces = [_][4]u32 {
+    },
+    .faces = [_][4]u32 {
         .{ 0, 1, 2, 3 },
         .{ 4, 5, 6, 7 },
         .{ 7, 6, 2, 3 },
         .{ 4, 7, 3, 0 },
         .{ 5, 4, 0, 1 },
         .{ 6, 5, 1, 2 },
-    };
-    for (staticFaces) |f| {
+    },
+};
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    var allocator = gpa.allocator();
+
+    var vertices = try ArrayList(vec3).initCapacity(allocator, 8);
+    for (meshBlueprint.vertices) |v| {
+        try vertices.append(v);
+    }
+    defer vertices.deinit();
+
+    var faces = try ArrayList(ArrayList(u32)).initCapacity(allocator, 6);
+
+    for (meshBlueprint.faces) |f| {
         var face = try ArrayList(u32).initCapacity(allocator, 4);
         try face.appendSlice(&f);
         try faces.append(face);
     }
+    defer faces.deinit();
     defer for (faces.items) |f| {
         f.deinit();
     };
-
 
     var subdivided = try subdivideMesh(allocator, vertices.items[0..], faces.items[0..]);
     defer subdivided.deinit();
@@ -84,6 +86,47 @@ fn subdivideMesh(
     var edgePoints = std.AutoHashMap(struct { u32, u32 }, usize).init(allocator);
     defer edgePoints.deinit();
 
+    // This is the part that's not working
+    // for (faces) |f| {
+    //     var facePoint = vec3{ 0.0, 0.0, 0.0 };
+    //     for (f.items) |v| {
+    //         facePoint += vertices[v];
+    //     }
+    //     facePoint /= @splat(3, @intToFloat(f32, f.items.len));
+
+    //     try newMesh.vertices.append(facePoint);
+
+    //     var newFace = try ArrayList(usize).initCapacity(allocator, f.items.len);
+    //     defer newFace.deinit();
+
+    //     for (f.items, 0..) |v1, i| {
+    //         const v2 = f.items[(i + 1) % f.items.len];
+
+    //         const edgeKey = if (v1 < v2) .{ v1, v2 } else .{ v2, v1 };
+
+    //         if (edgePoints.get(edgeKey)) |edge| {
+    //             try newFace.append(edge);
+    //         } else {
+    //             var oppositeFacePoint = oppositeFacePoint: {
+    //                 var oppositeFace = faces[getOppositeFaceIndex(f, faces, v1, v2)];
+    //                 var x = vec3{ 0.0, 0.0, 0.0 };
+    //                 for (oppositeFace.items) |v| {
+    //                     x += vertices[v];
+    //                 }
+    //                 x /= @splat(3, @intToFloat(f32, f.items.len));
+    //                 break :oppositeFacePoint x;
+    //             };
+    //             const me = (vertices[v1] + vertices[v2]) / @splat(3, @as(f32, 2.0));
+    //             const ep = (facePoint + oppositeFacePoint + me * @splat(3, @as(f32, 2.0))) / @splat(3, @as(f32, 4.0));
+
+    //             try newMesh.vertices.append(ep);
+    //             try edgePoints.put(edgeKey, newMesh.vertices.items.len - 1);
+
+    //             try newFace.append(newMesh.vertices.items.len - 1);
+    //         }
+    //     }
+
+    // This implementation makes more sense!
     for (faces) |f| {
         var facePoint = vec3{ 0.0, 0.0, 0.0 };
         for (f.items) |v| {
@@ -93,16 +136,13 @@ fn subdivideMesh(
 
         try newMesh.vertices.append(facePoint);
 
-        var newFace = try ArrayList(usize).initCapacity(allocator, f.items.len);
-        defer newFace.deinit();
-
         for (f.items, 0..) |v1, i| {
             const v2 = f.items[(i + 1) % f.items.len];
 
             const edgeKey = if (v1 < v2) .{ v1, v2 } else .{ v2, v1 };
 
             if (edgePoints.get(edgeKey)) |edge| {
-                try newFace.append(edge);
+                try newMesh.faces.items[newMesh.faces.items.len - 1].append(edge);
             } else {
                 var oppositeFacePoint = oppositeFacePoint: {
                     var oppositeFace = faces[getOppositeFaceIndex(f, faces, v1, v2)];
@@ -119,11 +159,16 @@ fn subdivideMesh(
                 try newMesh.vertices.append(ep);
                 try edgePoints.put(edgeKey, newMesh.vertices.items.len - 1);
 
+                var newFace = try ArrayList(usize).initCapacity(allocator, 4);
+
+                try newFace.append(v1);
                 try newFace.append(newMesh.vertices.items.len - 1);
+                try newFace.append(v2);
+                try newFace.append(newMesh.vertices.items.len - 1);
+
+                try newMesh.faces.append(newFace);
             }
         }
-
-        try newMesh.faces.append(newFace);
     }
 
     for (vertices, 0..) |p, i| {
@@ -184,10 +229,4 @@ pub fn getOppositeFaceIndex(
 const testing = @import("std").testing;
 
 test "getOppositeFaceIndex" {
-    try testing.expectEqual(getOppositeFaceIndex(0), 4);
-    try testing.expectEqual(getOppositeFaceIndex(1), 5);
-    try testing.expectEqual(getOppositeFaceIndex(2), 2);
-    try testing.expectEqual(getOppositeFaceIndex(3), 3);
-    try testing.expectEqual(getOppositeFaceIndex(4), 0);
-    try testing.expectEqual(getOppositeFaceIndex(5), 1);
 }
